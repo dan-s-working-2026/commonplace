@@ -158,7 +158,8 @@ body{font-family:'DM Sans',sans-serif;background:#f7f5f0;min-height:100vh}
 
 <script>
 // ── CONFIG ───────────────────────────────────────────────────────────────
-const API_KEY = "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"; // get one free at console.anthropic.com
+const ORACLE_ENDPOINT = "https://commonplace-oracle.doscherer.workers.dev/oracle";
+const RELAY_ENDPOINT = "https://commonplace-oracle.doscherer.workers.dev/relay";
 
 const CHANNELS = {
   philosophy: { name:"The School of Athens",   desc:"Exclusive presenting partner of the philosophy tradition" },
@@ -581,8 +582,8 @@ function buildModal() {
   if (state.formStatus === "done") {
     inner = `<div class="modal-success">
       <div style="font-size:2.5rem;margin-bottom:10px">✅</div>
-      <p style="font-size:15px;font-weight:500;margin:0 0 6px">Inquiry received</p>
-      <p style="font-size:13px;color:#7a748f;margin:0 0 18px">The MGMS team will be in touch about<br><strong>${escHtml(state.modal.title)}</strong></p>
+      <p style="font-size:15px;font-weight:500;margin:0 0 6px">Inquiry noted</p>
+      <p style="font-size:13px;color:#7a748f;margin:0 0 18px">Email delivery is not connected yet.<br>Please contact <strong>dan@mgms.tv</strong> about ${escHtml(state.modal.title)}.</p>
       <button class="modal-cancel" id="modal-close" style="width:100%">Close</button>
     </div>`;
   } else {
@@ -717,58 +718,72 @@ async function pickVoice(key) {
     : `No specific conversation provided. Reflect richly and in character on the themes of human-AI dialogue, thinking together, and what it means to exchange ideas across the boundary of human and machine.`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch(ORACLE_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
-        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 600,
-        system: v.sys + "\n\nYou are speaking for Commonplace — a wisdom interpretation engine by MGMS. Be genuinely insightful and fully in character. Speak as if beside this person, not above them. 4–5 rich sentences of interpretation, then one closing thought or question that is authentically yours. No preamble. No 'As [name]...' opener — just speak directly.",
-        messages: [{ role: "user", content: `${ctx}\n\nWhat do you make of what is really happening here?` }],
+        voiceKey: key,
+        voiceName: v.n,
+        voiceSystem: v.sys,
+        isPopVoice: !!v.pop,
+        context: ctx,
       }),
     });
-    if (!res.ok) throw new Error(`API error ${res.status} — check your API key`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "The oracle rests in silence.";
+    const data = await readJsonResponse(res);
+    if (!res.ok) throw new Error(data.error || `The oracle endpoint returned ${res.status}.`);
+    if (data.error) throw new Error(data.error);
+    const text = String(data.text || "").trim() || "The oracle rests in silence.";
     const parts = text.trim().split(/(?<=[.!?…])\s+/);
     const closing = parts.length > 1 ? parts.pop() : text;
     setState({ status: "done", respMain: parts.join(" "), respClosing: closing, respError: "", showMeme: !!v.pop });
   } catch (err) {
-    setState({ status: "error", respError: err.message });
+    setState({ status: "error", respError: err.message || "The oracle could not be reached. Please try again in a moment." });
   }
 }
 
 async function callRelay(content) {
+  const res = await fetch(RELAY_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error(`Relay endpoint returned ${res.status}.`);
+  return readJsonResponse(res);
+}
+
+async function readJsonResponse(res) {
   try {
-    await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6", max_tokens: 30,
-        system: "Internal relay for MGMS. Log the message and return only: received",
-        messages: [{ role: "user", content }],
-      }),
-    });
-  } catch (_) {}
+    return await res.json();
+  } catch (_) {
+    if (!res.ok) throw new Error(`The server returned ${res.status}, but no readable error details.`);
+    throw new Error("The server returned an unreadable response.");
+  }
 }
 
 async function submitInquiry() {
   if (!state.formName || !state.formEmail) { alert("Please enter your name and email."); return; }
   setState({ formStatus: "sending" });
-  await callRelay(`Sponsorship enquiry for Commonplace — forward to dan@mgms.tv:\nChannel: ${state.modal?.title}\nFrom: ${state.formName} (${state.formCompany})\nEmail: ${state.formEmail}\nMessage: ${state.formMsg || "none"}`);
-  setState({ formStatus: "done" });
+  try {
+    await callRelay(`Sponsorship enquiry for Commonplace — forward to dan@mgms.tv:\nChannel: ${state.modal?.title}\nFrom: ${state.formName} (${state.formCompany})\nEmail: ${state.formEmail}\nMessage: ${state.formMsg || "none"}`);
+    setState({ formStatus: "done" });
+  } catch (err) {
+    setState({ formStatus: "idle" });
+    alert(err.message || "The inquiry relay could not be reached. Please email dan@mgms.tv directly.");
+  }
 }
 
 async function submitFeedback() {
   if (!state.feedback.trim()) return;
   setState({ feedbackStatus: "sending" });
-  await callRelay(`User feedback for Commonplace — forward to dan@mgms.tv:\n${state.feedback}`);
-  setState({ feedbackStatus: "done" });
+  try {
+    await callRelay(`User feedback for Commonplace — forward to dan@mgms.tv:\n${state.feedback}`);
+    setState({ feedbackStatus: "done" });
+  } catch (err) {
+    setState({ feedbackStatus: "idle" });
+    alert(err.message || "The feedback relay could not be reached. Please try again later.");
+  }
 }
 
 // ── SHARE ────────────────────────────────────────────────────────────────

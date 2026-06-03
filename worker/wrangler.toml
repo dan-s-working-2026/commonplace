@@ -1,0 +1,6 @@
+name = "commonplace-oracle"
+main = "worker.js"
+compatibility_date = "2026-06-03"
+
+[vars]
+OPENAI_MODEL = "gpt-4o-mini"
