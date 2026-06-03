@@ -91,3 +91,30 @@ It currently returns `{ "ok": true }` as a safe placeholder. Real delivery still
 - `OPENAI_API_KEY` must be configured only as a Cloudflare Worker secret.
 - CORS is restricted to `https://dan-s-working-2026.github.io`.
 - The Worker rejects oversized request bodies and missing `voiceSystem`, `context`, or relay `content`.
+
+## Optional Secure Anthropic Setup
+
+The current production Worker uses OpenAI. If you later choose to add Anthropic as an alternate backend, keep the same secure pattern:
+
+Static frontend -> Cloudflare Worker -> Anthropic API
+
+Do not restore direct browser calls to Anthropic, and do not put an Anthropic key in `index.html`.
+
+1. Create an Anthropic API key in the Claude Console:
+
+   ```text
+   https://console.anthropic.com/
+   ```
+
+2. Store it as a Cloudflare Worker secret:
+
+   ```sh
+   cd worker
+   npx wrangler secret put ANTHROPIC_API_KEY
+   ```
+
+3. Update only the Worker backend to call Anthropic server-side. The frontend should still call your Worker endpoint, not `https://api.anthropic.com`.
+
+4. Keep `.env`, local shell variables, and committed files free of API keys unless you deliberately need a local development key. Anthropic documents `ANTHROPIC_API_KEY` as the API key environment variable, and warns that environment keys can cause API-billed usage when tools detect them.
+
+Anthropic free credits, billing rules, and account requirements can change. Check the Claude Console before relying on a free tier.
