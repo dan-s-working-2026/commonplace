@@ -1,4 +1,8 @@
-const ALLOWED_ORIGIN = "https://dan-s-working-2026.github.io";
+const ALLOWED_ORIGINS = new Set([
+  "https://dan-s-working-2026.github.io",
+  "http://127.0.0.1:4173",
+  "http://localhost:4173",
+]);
 const MAX_BODY_BYTES = 20_000;
 
 const jsonHeaders = {
@@ -31,13 +35,13 @@ export default {
 
 function handleOptions(request) {
   const origin = request.headers.get("Origin");
-  if (origin !== ALLOWED_ORIGIN) {
+  if (!ALLOWED_ORIGINS.has(origin)) {
     return new Response(null, { status: 403 });
   }
 
   return new Response(null, {
     status: 204,
-    headers: corsHeaders(),
+    headers: corsHeaders(request),
   });
 }
 
@@ -199,8 +203,9 @@ function corsHeaders(request) {
     "Vary": "Origin",
   };
 
-  if (!request || request.headers.get("Origin") === ALLOWED_ORIGIN) {
-    headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN;
+  const origin = request?.headers.get("Origin");
+  if (ALLOWED_ORIGINS.has(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
   }
 
   return headers;
