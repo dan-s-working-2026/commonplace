@@ -26,7 +26,7 @@ export default {
     }
 
     if (url.pathname === "/relay") {
-      return handleRelay(request);
+      return handleRelay(request, env);
     }
 
     return jsonResponse({ error: "Not found." }, 404, request);
@@ -124,7 +124,7 @@ What do you make of what is really happening here?`;
   return jsonResponse({ text }, 200, request);
 }
 
-async function handleRelay(request) {
+async function handleRelay(request, env) {
   let body;
   try {
     body = await readJsonBody(request);
@@ -132,11 +132,31 @@ async function handleRelay(request) {
     return jsonResponse({ error: error.message }, 400, request);
   }
 
-  if (!cleanString(body.content)) {
+  const content = cleanString(body.content);
+  if (!content) {
     return jsonResponse({ error: "Missing content." }, 400, request);
   }
 
-  // TODO: Add Resend, SendGrid, Formspree, Netlify Forms, or another email service for real delivery.
+  if (!env.RELAY_WEBHOOK_URL) {
+    return jsonResponse({ error: "Feedback relay is not configured." }, 500, request);
+  }
+
+  const relayResponse = await fetch(env.RELAY_WEBHOOK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      content,
+      source: "commonplace",
+      receivedAt: new Date().toISOString(),
+    }),
+  });
+
+  if (!relayResponse.ok) {
+    return jsonResponse({ error: `Feedback relay failed with status ${relayResponse.status}.` }, 502, request);
+  }
+
   return jsonResponse({ ok: true }, 200, request);
 }
 
